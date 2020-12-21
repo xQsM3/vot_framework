@@ -15,8 +15,9 @@ from vot.tracker import Registry, TrackerException
 from vot.stack import resolve_stack, list_integrated_stacks
 from vot.workspace import Workspace, Cache
 from vot.utilities import Progress, normalize_path, ColoredFormatter
+from framework.GUI.gui import Gui
 
-def do_test_custom(config,logger,sequence):
+def do_test_custom(config,logger,sequence,tool):
     
     trackers = Registry(config.registry)
     if not config.tracker:
@@ -43,7 +44,6 @@ def do_test_custom(config,logger,sequence):
         axes.set_aspect("equal")
         handle = MatplotlibDrawHandle(axes, size=sequence.size)
         handle.style(fill=False)
-        figure.show()
     '''
     runtime = None
 
@@ -52,30 +52,20 @@ def do_test_custom(config,logger,sequence):
         runtime = tracker.runtime(log=True)
         
         region, _, _ = runtime.initialize(sequence.frame(sequence.pointer), sequence.start_bbox[sequence.pointer])
-
+        print('INIT REGION {}'.format(region))
         if config.visualize:
-            pass
-            '''
-            axes.clear()
-            handle.image(sequence.frame(0).channel())
-            handle.style(color="green").region(sequence.frame(0).groundtruth())
-            handle.style(color="red").region(region)
-            figure.canvas.draw()
-            '''
+            
+            tool.loadFrame(sequence.imread_frame(sequence.pointer),region)
+            
         sequence.move_pointer = sequence.pointer +1
         for i in range(sequence.pointer, sequence.length):
             logger.info("Updating on frame %d/%d", i, sequence.length-1)
             region, _, _ = runtime.update(sequence.frame(i))
-
+            
             if config.visualize:
-                pass
-                '''
-                axes.clear()
-                handle.image(sequence.frame(i).channel())
-                handle.style(color="green").region(sequence.frame(i).groundtruth())
-                handle.style(color="red").region(region)
-                figure.canvas.draw()
-                '''
+                tool.loadFrame(sequence.imread_frame(i),region)
+                
+                
             sequence.move_pointer = sequence.pointer +1
             
         logger.info("Stopping tracker")

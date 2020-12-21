@@ -56,48 +56,6 @@ class Sequence(VOTSequence):
             self._metadata["channel.default"] = next(iter(channels.keys()))
         
         self._metadata["width"], self._metadata["height"] = six.next(six.itervalues(channels)).size
-        '''
-        groundtruth_file = os.path.join(self._base, self.metadata("groundtruth", "groundtruth.txt"))
 
-        with open(groundtruth_file, 'r') as filehandle:
-            for region in filehandle.readlines():
-                groundtruth.append(parse(region))
-
-        self._metadata["length"] = len(groundtruth)
-
-        tagfiles = glob.glob(os.path.join(self._base, '*.tag')) + glob.glob(os.path.join(self._base, '*.label'))
-
-        for tagfile in tagfiles:
-            with open(tagfile, 'r') as filehandle:
-                tagname = os.path.splitext(os.path.basename(tagfile))[0]
-                tag = [line.strip() == "1" for line in filehandle.readlines()]
-                while not len(tag) >= len(groundtruth):
-                    tag.append(False)
-                tags[tagname] = tag
-
-        valuefiles = glob.glob(os.path.join(self._base, '*.value'))
-
-        for valuefile in valuefiles:
-            with open(valuefile, 'r') as filehandle:
-                valuename = os.path.splitext(os.path.basename(valuefile))[0]
-                value = [float(line.strip()) for line in filehandle.readlines()]
-                while not len(value) >= len(groundtruth):
-                    value.append(0.0)
-                values[valuename] = value
-
-        for name, channel in channels.items():
-            if not channel.length == len(groundtruth):
-                raise DatasetException("Length mismatch for channel %s" % name)
-
-        for name, tag in tags.items():
-            if not len(tag) == len(groundtruth):
-                tag_tmp = len(groundtruth) * [False]
-                tag_tmp[:len(tag)] = tag
-                tag = tag_tmp
-
-        for name, value in values.items():
-            if not len(value) == len(groundtruth):
-                raise DatasetException("Length mismatch for value %s" % name)
-        '''
         return channels, groundtruth, tags, values
         

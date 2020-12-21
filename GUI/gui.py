@@ -23,6 +23,7 @@ from vot.tracker import Registry, TrackerException
 from vot.stack import resolve_stack, list_integrated_stacks
 from vot.workspace import Workspace, Cache
 from vot.utilities import Progress, normalize_path, ColoredFormatter
+from vot.region.shapes import Rectangle
 
 import tkinter.messagebox
 from PIL import Image, ImageTk
@@ -34,15 +35,23 @@ import numpy as np
 import ntpath
 from framework.utilities import cli
 from framework.dataset.dataset import Sequence
+from framework.utilities.draw import GUIDrawHandle
+
+from threading import Thread
+import queue
 # colors for the bboxes
 COLORS = ['red', 'blue', 'yellow', 'pink', 'cyan', 'green', 'black']
 # image sizes for the examples
 SIZE = 1710, 1696
 
-class LabelTool():
+class Gui():
     def __init__(self, master):
+        
+        control_thread = Thread(target=self.run_tracker, daemon=True)
+        control_thread.start()
+        
         self.imgclass = 0
-
+        self.img = None
 
         # set up the main frame
         self.parent = master
@@ -50,7 +59,9 @@ class LabelTool():
         self.frame = Frame(self.parent)
         self.frame.pack(fill=BOTH, expand=1)
         self.parent.resizable(width = FALSE, height = FALSE)
-
+        
+        # set up drawHandle
+        self.handle = GUIDrawHandle()
         # initialize global state
         self.imageDir = ''
         self.imageList= []
@@ -75,7 +86,7 @@ class LabelTool():
         self.bboxList = []
         self.hl = None
         self.vl = None
-
+        self.downsample_ratio = 2
         # ----------------- GUI stuff ---------------------
         # dir entry & load
         self.label = Label(self.frame, text = "Image Dir:")
@@ -145,15 +156,15 @@ class LabelTool():
         # for debugging
 ##        self.setImage()
 ##        self.loadDir()
-
-
+        self.parent.mainloop()
+    
     def loadDir(self, dbg = False):
 
         #self.imageDir = '/media/xqsme/Elements2/Render/YOLO training dataset/images/train/'+str(self.imgclass)
         #os.path.join('forboxing', str(self.imgclass))
         self.imageDir = self.entry.get()
         self.imageList = sorted (glob.glob(self.imageDir+'/*.jpg') )
-        print(self.imageList)
+
         
         #self.imageList = glob.glob(os.path.join(self.imageDir, '*.jpg'))
         #self.imageList = sorted(self.imageList)
@@ -189,7 +200,13 @@ class LabelTool():
         '''
         self.loadImage()
         print ('%d video loaded' %(self.total))
-
+    def loadFrame(self,img,region):
+        # get frame with region from handle
+        self.cur +=1
+        self.handle.updateHandle(img,region)
+        self.handle.draw_rectangle()
+        self.img = self.handle.pilframe
+        self.img = self.downSample(self.img)
     def loadImage(self):
         # load image
         
@@ -234,62 +251,23 @@ class LabelTool():
     def downSample(self,large_img):
         h,w = large_img.size
         ratio = 2
-        size = h//ratio,w//ratio
-        print(size)
+        size = h//self.downsample_ratio,w//self.downsample_ratio
         small_img = large_img.resize(size)
         return small_img
     def saveImage(self):
         pass
-        '''
-        try:
-            box = self.bboxList[0]
-            imgw = self.img.size[0]
-            imgh = self.img.size[1]
-            x = (box[0] + box[2]) / 2 / imgw
-            y = (box[1] + box[3]) / 2 / imgh
-            w = (box[2] - box[0]) / imgw
-            h = (box[3] - box[1]) / imgh
-        except:
-            x,y,w,h = np.nan,np.nan,np.nan,np.nan
-        
-        
-        if not os.path.exists(os.path.dirname(self.labelfilename)):
-            os.mkdir(os.path.dirname(self.labelfilename))
-            
-        with open(self.labelfilename, 'w') as f:
-            for box in self.bboxList:
-                imgw = self.img.size[0]
-                imgh = self.img.size[1]
-                x = (box[0] + box[2]) / 2 /imgw
-                y = (box[1] + box[3]) / 2 / imgh
-                w = (box[2] - box[0]) / imgw
-                h = (box[3] - box[1]) / imgh
-                f.write("%d %f %f %f %f\n" % (self.imgclass, x, y, w, h))
-        #print ('Image No. %d saved' %(self.cur))
-        '''
     def run_tracker(self):
-        config = cli.config('AlphaRef')
-        
-        logger = logging.getLogger("vot")
-        stream = logging.StreamHandler()
-        stream.setFormatter(ColoredFormatter())
-        logger.addHandler(stream)   
-        
-        logger.setLevel(logging.INFO)
-        
-        sequence = Sequence(self.imageDir)
-        sequence.move_pointer = self.cur
-        for bbox in self.bboxList:
-            sequence.assign_start_bbox(bbox)
-        
-        if config.debug:
-            logger.setLevel(logging.DEBUG)
-
-        update, version = check_updates()
-        if update:
-            logger.warning("A newer version of VOT toolkit is available (%s), please update.", version)
+        #prepare second thread and start tracker in second thread
+        self.queue = queue.Queue()
+        ThreadedTask(self.queue,self).start()
+        self.parent.after(100, self.process_queue())
+    def process_queue(self):
+        try:
+            self.update()
+            msg = self.queue.get(0)
+        except queue.Empty:
+            self.parent.after(100, self.process_queue)
             
-        cli.do_test_custom(config,logger,sequence)
     def mouseClickLeft(self, event):
         if self.STATE['click'] == 0:
             self.STATE['x'], self.STATE['y'] = event.x, event.y
@@ -377,6 +355,15 @@ class LabelTool():
             self.cur = idx
             self.loadImage()
 
+    def update(self):
+         
+        self.tkimg = ImageTk.PhotoImage(self.img)
+        self.mainPanel.config(width = max(self.tkimg.width(), 400), height = max(self.tkimg.height(), 400))
+        self.mainPanel.create_image(0, 0, image = self.tkimg, anchor=NW)
+        self.progLabel.config(text = "%04d/%04d" %(self.cur, self.total))
+        imgw = self.img.size[0]
+        imgh = self.img.size[1]
+
 ##    def setImage(self, imagepath = r'test2.png'):
 ##        self.img = Image.open(imagepath)
 ##        self.tkimg = ImageTk.PhotoImage(self.img)
@@ -384,8 +371,51 @@ class LabelTool():
 ##        self.mainPanel.config(height = self.tkimg.height())
 ##        self.mainPanel.create_image(0, 0, image = self.tkimg, anchor=NW)
 
+class ThreadedTask(Thread):
+    def __init__(self, queue,tool):
+        Thread.__init__(self)
+        self.queue = queue
+        self.tool = tool
+    def run(self):
+        config = cli.config('AlphaRef')
+        
+        logger = logging.getLogger("vot")
+        stream = logging.StreamHandler()
+        stream.setFormatter(ColoredFormatter())
+        logger.addHandler(stream)   
+        
+        logger.setLevel(logging.INFO)
+        
+        sequence = Sequence(self.tool.imageDir)
+        
+        sequence.move_pointer(self.tool.cur)
+        
+        for bbox in self.tool.bboxList:
+            # adjust bbox with downsample ration
+            bbox = np.asarray(bbox)
+            bbox = bbox * self.tool.downsample_ratio
+            
+            # convert bbox from GUI to VOT definition
+            x = bbox[0]
+            y = bbox[1]
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+            bbox = x,y,w,h
+            sequence.assign_start_bbox(bbox)
+        
+        if config.debug:
+            logger.setLevel(logging.DEBUG)
+
+        update, version = check_updates()
+        if update:
+            logger.warning("A newer version of VOT toolkit is available (%s), please update.", version)
+        
+        try:    
+            cli.do_test_custom(config,logger,sequence,self.tool)
+        except:
+            pass
 if __name__ == '__main__':
     root = Tk()
-    tool = LabelTool(root)
+    tool = Gui(root)
     root.resizable(width =  True, height = True)
-    root.mainloop()
+    #root.mainloop()

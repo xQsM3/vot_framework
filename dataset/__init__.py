@@ -28,8 +28,6 @@ class PatternFileListChannel(VOTPatternFileListChannel):
         self._files = []
         
         frameList = sorted (glob.glob(self.path+'/*.jpg') )
-        print('##########')
-        print(frameList)
         for frame in frameList:
             if not os.path.isfile(frame):
                 break
